@@ -140,64 +140,49 @@
         let currentStock = stockList[0];
         let currentIndex = 'sh';
         let klineChart = echarts.init(document.getElementById('klineChart'));
-        let indexData = {}; // 存储大盘指数K线数据
+        let allData = null; // 存储从data.json读取的全部数据
 
-        // 加载大盘指数K线数据
-        function loadIndexData() {
-            const indices = [
-                { code: 'sh000001', key: 'sh' },
-                { code: 'sz399001', key: 'sz' }
-            ];
-            let loaded = 0;
-            indices.forEach(idx => {
-                const script = document.createElement('script');
-                script.src = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${idx.code}&scale=240&ma=no&datalen=60&callback=renderIndex`;
-                window.renderIndex = function(data) {
-                    indexData[idx.key] = data;
-                    loaded++;
-                    if (loaded === indices.length) {
-                        updateIndexDisplay();
-                        renderIndexKline();
-                    }
-                };
-                document.head.appendChild(script);
-            });
+        // 从本地data.json加载全部数据
+        async function loadAllData() {
+            try {
+                const response = await fetch('data.json');
+                allData = await response.json();
+                // 渲染大盘指数
+                renderIndexDisplay();
+                renderIndexKline();
+                // 渲染当前选中个股
+                loadStockData(currentStock);
+            } catch (e) {
+                console.error('加载数据失败:', e);
+            }
         }
 
-        // 更新大盘指数显示（显示最近一个交易日的数据）
-        function updateIndexDisplay() {
-            const shData = indexData['sh'];
-            const szData = indexData['sz'];
-            if (shData && shData.length > 0) {
-                const last = shData[shData.length - 1];
-                const prev = shData.length > 1 ? shData[shData.length - 2] : null;
-                const close = parseFloat(last.close);
-                const preClose = prev ? parseFloat(prev.close) : close;
-                const change = (close - preClose).toFixed(2);
-                const changePct = ((change / preClose) * 100).toFixed(2);
-                const isUp = change >= 0;
-                document.getElementById('shPrice').textContent = close.toFixed(2);
-                document.getElementById('shChange').textContent = `${last.day}  ${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
-                document.getElementById('shChange').className = `index-change ${isUp ? 'up' : 'down'}`;
-            }
-            if (szData && szData.length > 0) {
-                const last = szData[szData.length - 1];
-                const prev = szData.length > 1 ? szData[szData.length - 2] : null;
-                const close = parseFloat(last.close);
-                const preClose = prev ? parseFloat(prev.close) : close;
-                const change = (close - preClose).toFixed(2);
-                const changePct = ((change / preClose) * 100).toFixed(2);
-                const isUp = change >= 0;
-                document.getElementById('szPrice').textContent = close.toFixed(2);
-                document.getElementById('szChange').textContent = `${last.day}  ${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
-                document.getElementById('szChange').className = `index-change ${isUp ? 'up' : 'down'}`;
-            }
+        // 渲染大盘指数显示
+        function renderIndexDisplay() {
+            if (!allData || !allData.indexes) return;
+            allData.indexes.forEach(idx => {
+                const code = idx.code;
+                const last = idx.kline[idx.kline.length - 1];
+                const isUp = idx.change >= 0;
+                if (code === 'sh000001') {
+                    document.getElementById('shPrice').textContent = idx.price.toFixed(2);
+                    document.getElementById('shChange').textContent = `${last.day}  ${isUp ? '+' : ''}${idx.change}  ${isUp ? '+' : ''}${idx.change_pct}%`;
+                    document.getElementById('shChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+                } else if (code === 'sz399001') {
+                    document.getElementById('szPrice').textContent = idx.price.toFixed(2);
+                    document.getElementById('szChange').textContent = `${last.day}  ${isUp ? '+' : ''}${idx.change}  ${isUp ? '+' : ''}${idx.change_pct}%`;
+                    document.getElementById('szChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+                }
+            });
         }
 
         // 渲染大盘指数K线
         function renderIndexKline() {
-            const data = indexData[currentIndex];
-            if (!data) return;
+            if (!allData || !allData.indexes) return;
+            const idxCode = currentIndex === 'sh' ? 'sh000001' : 'sz399001';
+            const idx = allData.indexes.find(i => i.code === idxCode);
+            if (!idx) return;
+            const data = idx.kline;
             const dates = [];
             const klineData = [];
             for (let i = data.length - 1; i >= 0; i--) {
@@ -225,37 +210,35 @@
             klineChart.setOption(option, true);
         }
 
-        // 加载个股日线数据
+        // 加载个股日线数据（从本地data.json读取）
         function loadStockData(stock) {
-            const script = document.createElement('script');
-            script.src = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${stock.code}&scale=240&ma=no&datalen=30&callback=renderStock`;
-            window.renderStock = function(data) {
-                // 渲染表格
-                let tableHtml = '';
-                for (let i = data.length - 1; i >= 0; i--) {
-                    const item = data[i];
-                    const open = parseFloat(item.open);
-                    const high = parseFloat(item.high);
-                    const low = parseFloat(item.low);
-                    const close = parseFloat(item.close);
-                    const preClose = i > 0 ? parseFloat(data[i-1].close) : open;
-                    const change = (close - preClose).toFixed(2);
-                    const changePct = ((change / preClose) * 100).toFixed(2);
-                    const isUp = change >= 0;
-                    
-                    tableHtml += `<tr>
-                        <td>${item.day}</td>
-                        <td class="${isUp ? 'up' : 'down'}">${close.toFixed(2)}</td>
-                        <td>${open.toFixed(2)}</td>
-                        <td>${high.toFixed(2)}</td>
-                        <td>${low.toFixed(2)}</td>
-                        <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${change}</td>
-                        <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${changePct}%</td>
-                    </tr>`;
-                }
-                document.getElementById('stockTable').innerHTML = tableHtml;
-            };
-            document.head.appendChild(script);
+            if (!allData || !allData.stocks) return;
+            const stockData = allData.stocks.find(s => s.code === stock.code);
+            if (!stockData) return;
+            const data = stockData.kline;
+            // 渲染表格
+            let tableHtml = '';
+            for (let i = data.length - 1; i >= 0; i--) {
+                const item = data[i];
+                const open = parseFloat(item.open);
+                const high = parseFloat(item.high);
+                const low = parseFloat(item.low);
+                const close = parseFloat(item.close);
+                const change = item.change || 0;
+                const changePct = item.change_pct || 0;
+                const isUp = change >= 0;
+                
+                tableHtml += `<tr>
+                    <td>${item.day}</td>
+                    <td class="${isUp ? 'up' : 'down'}">${close.toFixed(2)}</td>
+                    <td>${open.toFixed(2)}</td>
+                    <td>${high.toFixed(2)}</td>
+                    <td>${low.toFixed(2)}</td>
+                    <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${change.toFixed(2)}</td>
+                    <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${changePct.toFixed(2)}%</td>
+                </tr>`;
+            }
+            document.getElementById('stockTable').innerHTML = tableHtml;
         }
 
         // 生成股票切换标签
@@ -290,10 +273,9 @@
 
         // 初始化
         window.onload = () => {
-            loadIndexData();
+            loadAllData();
             initTabs();
             initIndexTabs();
-            loadStockData(currentStock);
             window.addEventListener('resize', () => klineChart.resize());
         };
     </script>
