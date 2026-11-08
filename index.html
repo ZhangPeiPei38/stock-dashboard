@@ -80,7 +80,7 @@
 
     <!-- K线图板块 -->
     <div class="card">
-        <div class="title">大盘指数走势</div>
+        <div class="title">大盘指数走势 <span id="indexChangeDisplay" style="font-size:14px; font-weight:normal; margin-left:12px;"></span></div>
         <div class="stock-tabs" id="indexTabs">
             <button class="tab-btn active" data-index="sh">上证指数</button>
             <button class="tab-btn" data-index="sz">深证成指</button>
@@ -203,6 +203,12 @@
                 dates.unshift(item.day);
                 klineData.unshift([parseFloat(item.open), parseFloat(item.close), parseFloat(item.low), parseFloat(item.high)]);
             }
+            // 更新标题旁边的涨跌百分比显示
+            const isUp = idx.change >= 0;
+            const display = document.getElementById('indexChangeDisplay');
+            display.textContent = `${isUp ? '+' : ''}${idx.change}  ${isUp ? '+' : ''}${idx.change_pct}%`;
+            display.className = isUp ? 'up' : 'down';
+            
             const option = {
                 tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
                 grid: { left: '10%', right: '5%', bottom: '10%' },
@@ -229,7 +235,9 @@
             const stockData = allData.stocks.find(s => s.code === stock.code);
             if (!stockData) return;
             currentStockData = stockData;
-            currentPage = 1; // 切换股票时重置到第一页
+            // 默认显示最新的一页（最后一页），这样第一页最下面就是最新日期
+            const totalPages = Math.ceil(stockData.kline.length / pageSize);
+            currentPage = totalPages;
             renderStockTable();
         }
 
@@ -247,25 +255,45 @@
             let tableHtml = '';
             for (let i = 0; i < pageData.length; i++) {
                 const item = pageData[i];
+                // 找到当前数据在完整数组中的索引，用于获取上一个交易日的收盘价
+                const globalIndex = start + i;
+                const prevClose = globalIndex > 0 ? parseFloat(data[globalIndex - 1].close) : parseFloat(item.open);
+                
                 const open = parseFloat(item.open);
                 const high = parseFloat(item.high);
                 const low = parseFloat(item.low);
                 const close = parseFloat(item.close);
                 const change = item.change || 0;
                 const changePct = item.change_pct || 0;
-                // 涨跌颜色：>0红，<0绿，=0黑
-                let colorClass = 'flat';
-                if (change > 0) colorClass = 'up';
-                else if (change < 0) colorClass = 'down';
+                
+                // 收盘价颜色：和上一个交易日收盘价对比
+                let closeColor = 'flat';
+                if (change > 0) closeColor = 'up';
+                else if (change < 0) closeColor = 'down';
+                
+                // 开盘价颜色：和上一个交易日收盘价对比
+                let openColor = 'flat';
+                if (open > prevClose) openColor = 'up';
+                else if (open < prevClose) openColor = 'down';
+                
+                // 最高价颜色：和上一个交易日收盘价对比
+                let highColor = 'flat';
+                if (high > prevClose) highColor = 'up';
+                else if (high < prevClose) highColor = 'down';
+                
+                // 最低价颜色：和上一个交易日收盘价对比
+                let lowColor = 'flat';
+                if (low > prevClose) lowColor = 'up';
+                else if (low < prevClose) lowColor = 'down';
                 
                 tableHtml += `<tr>
                     <td>${item.day}</td>
-                    <td class="${colorClass}">${close.toFixed(2)}</td>
-                    <td>${open.toFixed(2)}</td>
-                    <td>${high.toFixed(2)}</td>
-                    <td>${low.toFixed(2)}</td>
-                    <td class="${colorClass}">${change > 0 ? '+' : ''}${change.toFixed(2)}</td>
-                    <td class="${colorClass}">${change > 0 ? '+' : ''}${changePct.toFixed(2)}%</td>
+                    <td class="${closeColor}">${close.toFixed(2)}</td>
+                    <td class="${openColor}">${open.toFixed(2)}</td>
+                    <td class="${highColor}">${high.toFixed(2)}</td>
+                    <td class="${lowColor}">${low.toFixed(2)}</td>
+                    <td class="${closeColor}">${change > 0 ? '+' : ''}${change.toFixed(2)}</td>
+                    <td class="${closeColor}">${change > 0 ? '+' : ''}${changePct.toFixed(2)}%</td>
                 </tr>`;
             }
             document.getElementById('stockTable').innerHTML = tableHtml;
