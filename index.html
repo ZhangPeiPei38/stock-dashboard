@@ -55,10 +55,10 @@
                 <thead>
                     <tr>
                         <th>日期</th>
-                        <th>开盘</th>
-                        <th>最高</th>
-                        <th>最低</th>
-                        <th>收盘</th>
+                        <th>收盘价</th>
+                        <th>开盘价</th>
+                        <th>最高价</th>
+                        <th>最低价</th>
                         <th>涨跌额</th>
                         <th>涨跌幅</th>
                     </tr>
@@ -70,7 +70,11 @@
 
     <!-- K线图板块 -->
     <div class="card">
-        <div class="title">K线走势</div>
+        <div class="title">大盘指数走势</div>
+        <div class="stock-tabs" id="indexTabs">
+            <button class="tab-btn active" data-index="sh">上证指数</button>
+            <button class="tab-btn" data-index="sz">深证成指</button>
+        </div>
         <div id="klineChart"></div>
     </div>
 
@@ -134,34 +138,91 @@
             { code: 'sh600362', name: '江西铜业' },
         ];
         let currentStock = stockList[0];
+        let currentIndex = 'sh';
         let klineChart = echarts.init(document.getElementById('klineChart'));
+        let indexData = {}; // 存储大盘指数K线数据
 
-        // 加载大盘指数
-        function loadIndex() {
-            const codes = ['sh000001', 'sz399001'];
-            codes.forEach((code, idx) => {
+        // 加载大盘指数K线数据
+        function loadIndexData() {
+            const indices = [
+                { code: 'sh000001', key: 'sh' },
+                { code: 'sz399001', key: 'sz' }
+            ];
+            let loaded = 0;
+            indices.forEach(idx => {
                 const script = document.createElement('script');
-                script.src = `https://hq.sinajs.cn/list=${code}`;
-                script.onload = () => {
-                    const data = window[`hq_str_${code}`].split(',');
-                    const price = parseFloat(data[3]);
-                    const preClose = parseFloat(data[2]);
-                    const change = (price - preClose).toFixed(2);
-                    const changePct = ((change / preClose) * 100).toFixed(2);
-                    const isUp = change >= 0;
-                    
-                    if (idx === 0) {
-                        document.getElementById('shPrice').textContent = price.toFixed(2);
-                        document.getElementById('shChange').textContent = `${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
-                        document.getElementById('shChange').className = `index-change ${isUp ? 'up' : 'down'}`;
-                    } else {
-                        document.getElementById('szPrice').textContent = price.toFixed(2);
-                        document.getElementById('szChange').textContent = `${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
-                        document.getElementById('szChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+                script.src = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${idx.code}&scale=240&ma=no&datalen=60&callback=renderIndex`;
+                window.renderIndex = function(data) {
+                    indexData[idx.key] = data;
+                    loaded++;
+                    if (loaded === indices.length) {
+                        updateIndexDisplay();
+                        renderIndexKline();
                     }
                 };
                 document.head.appendChild(script);
             });
+        }
+
+        // 更新大盘指数显示（显示最近一个交易日的数据）
+        function updateIndexDisplay() {
+            const shData = indexData['sh'];
+            const szData = indexData['sz'];
+            if (shData && shData.length > 0) {
+                const last = shData[shData.length - 1];
+                const prev = shData.length > 1 ? shData[shData.length - 2] : null;
+                const close = parseFloat(last.close);
+                const preClose = prev ? parseFloat(prev.close) : close;
+                const change = (close - preClose).toFixed(2);
+                const changePct = ((change / preClose) * 100).toFixed(2);
+                const isUp = change >= 0;
+                document.getElementById('shPrice').textContent = close.toFixed(2);
+                document.getElementById('shChange').textContent = `${last.day}  ${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
+                document.getElementById('shChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+            }
+            if (szData && szData.length > 0) {
+                const last = szData[szData.length - 1];
+                const prev = szData.length > 1 ? szData[szData.length - 2] : null;
+                const close = parseFloat(last.close);
+                const preClose = prev ? parseFloat(prev.close) : close;
+                const change = (close - preClose).toFixed(2);
+                const changePct = ((change / preClose) * 100).toFixed(2);
+                const isUp = change >= 0;
+                document.getElementById('szPrice').textContent = close.toFixed(2);
+                document.getElementById('szChange').textContent = `${last.day}  ${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
+                document.getElementById('szChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+            }
+        }
+
+        // 渲染大盘指数K线
+        function renderIndexKline() {
+            const data = indexData[currentIndex];
+            if (!data) return;
+            const dates = [];
+            const klineData = [];
+            for (let i = data.length - 1; i >= 0; i--) {
+                const item = data[i];
+                dates.unshift(item.day);
+                klineData.unshift([parseFloat(item.open), parseFloat(item.close), parseFloat(item.low), parseFloat(item.high)]);
+            }
+            const option = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                grid: { left: '10%', right: '5%', bottom: '10%' },
+                xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10 } },
+                yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
+                series: [{
+                    name: currentIndex === 'sh' ? '上证指数' : '深证成指',
+                    type: 'candlestick',
+                    data: klineData,
+                    itemStyle: {
+                        color: '#e53935',
+                        color0: '#2e7d32',
+                        borderColor: '#e53935',
+                        borderColor0: '#2e7d32'
+                    }
+                }]
+            };
+            klineChart.setOption(option, true);
         }
 
         // 加载个股日线数据
@@ -171,8 +232,6 @@
             window.renderStock = function(data) {
                 // 渲染表格
                 let tableHtml = '';
-                const dates = [];
-                const klineData = [];
                 for (let i = data.length - 1; i >= 0; i--) {
                     const item = data[i];
                     const open = parseFloat(item.open);
@@ -186,37 +245,15 @@
                     
                     tableHtml += `<tr>
                         <td>${item.day}</td>
+                        <td class="${isUp ? 'up' : 'down'}">${close.toFixed(2)}</td>
                         <td>${open.toFixed(2)}</td>
                         <td>${high.toFixed(2)}</td>
                         <td>${low.toFixed(2)}</td>
-                        <td class="${isUp ? 'up' : 'down'}">${close.toFixed(2)}</td>
                         <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${change}</td>
                         <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${changePct}%</td>
                     </tr>`;
-                    
-                    dates.unshift(item.day);
-                    klineData.unshift([open, close, low, high]);
                 }
                 document.getElementById('stockTable').innerHTML = tableHtml;
-
-                // 渲染K线
-                const option = {
-                    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-                    grid: { left: '10%', right: '5%', bottom: '10%' },
-                    xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10 } },
-                    yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
-                    series: [{
-                        type: 'candlestick',
-                        data: klineData,
-                        itemStyle: {
-                            color: '#e53935',
-                            color0: '#2e7d32',
-                            borderColor: '#e53935',
-                            borderColor0: '#2e7d32'
-                        }
-                    }]
-                };
-                klineChart.setOption(option);
             };
             document.head.appendChild(script);
         }
@@ -229,7 +266,7 @@
                 btn.className = `tab-btn ${idx === 0 ? 'active' : ''}`;
                 btn.textContent = stock.name;
                 btn.onclick = () => {
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('#stockTabs .tab-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     currentStock = stock;
                     loadStockData(stock);
@@ -238,14 +275,26 @@
             });
         }
 
+        // 初始化大盘指数标签切换
+        function initIndexTabs() {
+            const tabs = document.querySelectorAll('#indexTabs .tab-btn');
+            tabs.forEach(btn => {
+                btn.onclick = () => {
+                    tabs.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentIndex = btn.dataset.index;
+                    renderIndexKline();
+                };
+            });
+        }
+
         // 初始化
         window.onload = () => {
-            loadIndex();
+            loadIndexData();
             initTabs();
+            initIndexTabs();
             loadStockData(currentStock);
             window.addEventListener('resize', () => klineChart.resize());
-            // 每30秒刷新一次大盘
-            setInterval(loadIndex, 30000);
         };
     </script>
 </body>
