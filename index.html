@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自选股行情看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, "Microsoft YaHei", sans-serif; }
+        body { background: #f5f5f5; padding: 12px; color: #333; }
+        .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .title { font-size: 18px; font-weight: bold; margin-bottom: 12px; border-left: 4px solid #e53935; padding-left: 8px; }
+        .index-container { display: flex; gap: 12px; flex-wrap: wrap; }
+        .index-item { flex: 1; min-width: 140px; padding: 12px; border-radius: 6px; text-align: center; background: #fafafa; }
+        .index-name { font-size: 14px; color: #666; margin-bottom: 6px; }
+        .index-price { font-size: 20px; font-weight: bold; }
+        .index-change { font-size: 14px; margin-top: 4px; }
+        .up { color: #e53935; }
+        .down { color: #2e7d32; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid #eee; }
+        th:first-child, td:first-child { text-align: left; }
+        th { background: #fafafa; font-weight: normal; color: #666; }
+        .stock-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .tab-btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
+        .tab-btn.active { background: #e53935; color: #fff; border-color: #e53935; }
+        #klineChart { width: 100%; height: 300px; }
+        .table-wrap { overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <!-- 大盘指数板块 -->
+    <div class="card">
+        <div class="title">沪深大盘</div>
+        <div class="index-container">
+            <div class="index-item">
+                <div class="index-name">上证指数</div>
+                <div class="index-price" id="shPrice">--</div>
+                <div class="index-change" id="shChange">--</div>
+            </div>
+            <div class="index-item">
+                <div class="index-name">深证成指</div>
+                <div class="index-price" id="szPrice">--</div>
+                <div class="index-change" id="szChange">--</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 个股行情板块 -->
+    <div class="card">
+        <div class="title">自选股行情</div>
+        <div class="stock-tabs" id="stockTabs"></div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>开盘</th>
+                        <th>最高</th>
+                        <th>最低</th>
+                        <th>收盘</th>
+                        <th>涨跌额</th>
+                        <th>涨跌幅</th>
+                    </tr>
+                </thead>
+                <tbody id="stockTable"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- K线图板块 -->
+    <div class="card">
+        <div class="title">K线走势</div>
+        <div id="klineChart"></div>
+    </div>
+
+    <script>
+        // 自选股配置 - 后续替换成你的股票代码
+        const stockList = [
+            { code: 'sh600519', name: '贵州茅台' },
+            { code: 'sz000001', name: '平安银行' }
+        ];
+        let currentStock = stockList[0];
+        let klineChart = echarts.init(document.getElementById('klineChart'));
+
+        // 加载大盘指数
+        function loadIndex() {
+            const codes = ['sh000001', 'sz399001'];
+            codes.forEach((code, idx) => {
+                const script = document.createElement('script');
+                script.src = `https://hq.sinajs.cn/list=${code}`;
+                script.onload = () => {
+                    const data = window[`hq_str_${code}`].split(',');
+                    const price = parseFloat(data[3]);
+                    const preClose = parseFloat(data[2]);
+                    const change = (price - preClose).toFixed(2);
+                    const changePct = ((change / preClose) * 100).toFixed(2);
+                    const isUp = change >= 0;
+                    
+                    if (idx === 0) {
+                        document.getElementById('shPrice').textContent = price.toFixed(2);
+                        document.getElementById('shChange').textContent = `${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
+                        document.getElementById('shChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+                    } else {
+                        document.getElementById('szPrice').textContent = price.toFixed(2);
+                        document.getElementById('szChange').textContent = `${isUp ? '+' : ''}${change}  ${isUp ? '+' : ''}${changePct}%`;
+                        document.getElementById('szChange').className = `index-change ${isUp ? 'up' : 'down'}`;
+                    }
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        // 加载个股日线数据
+        function loadStockData(stock) {
+            const script = document.createElement('script');
+            script.src = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${stock.code}&scale=240&ma=no&datalen=30&callback=renderStock`;
+            window.renderStock = function(data) {
+                // 渲染表格
+                let tableHtml = '';
+                const dates = [];
+                const klineData = [];
+                for (let i = data.length - 1; i >= 0; i--) {
+                    const item = data[i];
+                    const open = parseFloat(item.open);
+                    const high = parseFloat(item.high);
+                    const low = parseFloat(item.low);
+                    const close = parseFloat(item.close);
+                    const preClose = i > 0 ? parseFloat(data[i-1].close) : open;
+                    const change = (close - preClose).toFixed(2);
+                    const changePct = ((change / preClose) * 100).toFixed(2);
+                    const isUp = change >= 0;
+                    
+                    tableHtml += `<tr>
+                        <td>${item.day}</td>
+                        <td>${open.toFixed(2)}</td>
+                        <td>${high.toFixed(2)}</td>
+                        <td>${low.toFixed(2)}</td>
+                        <td class="${isUp ? 'up' : 'down'}">${close.toFixed(2)}</td>
+                        <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${change}</td>
+                        <td class="${isUp ? 'up' : 'down'}">${isUp ? '+' : ''}${changePct}%</td>
+                    </tr>`;
+                    
+                    dates.unshift(item.day);
+                    klineData.unshift([open, close, low, high]);
+                }
+                document.getElementById('stockTable').innerHTML = tableHtml;
+
+                // 渲染K线
+                const option = {
+                    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                    grid: { left: '10%', right: '5%', bottom: '10%' },
+                    xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10 } },
+                    yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
+                    series: [{
+                        type: 'candlestick',
+                        data: klineData,
+                        itemStyle: {
+                            color: '#e53935',
+                            color0: '#2e7d32',
+                            borderColor: '#e53935',
+                            borderColor0: '#2e7d32'
+                        }
+                    }]
+                };
+                klineChart.setOption(option);
+            };
+            document.head.appendChild(script);
+        }
+
+        // 生成股票切换标签
+        function initTabs() {
+            const tabs = document.getElementById('stockTabs');
+            stockList.forEach((stock, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `tab-btn ${idx === 0 ? 'active' : ''}`;
+                btn.textContent = stock.name;
+                btn.onclick = () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentStock = stock;
+                    loadStockData(stock);
+                };
+                tabs.appendChild(btn);
+            });
+        }
+
+        // 初始化
+        window.onload = () => {
+            loadIndex();
+            initTabs();
+            loadStockData(currentStock);
+            window.addEventListener('resize', () => klineChart.resize());
+            // 每30秒刷新一次大盘
+            setInterval(loadIndex, 30000);
+        };
+    </script>
+</body>
+</html>
