@@ -317,17 +317,19 @@
                     left: 'center',
                     bottom: 0,
                     inRange: {
-                        color: ['#00c853', '#69f0ae', '#ffffff', '#ff5252', '#d50000']
+                        color: ['#00c853', '#69f0ae', '#ff5252', '#d50000']
                     },
                     textStyle: { fontSize: 10 }
                 },
                 calendar: {
                     top: 40,
-                    left: 30,
-                    right: 30,
-                    cellSize: ['auto', 24],
+                    left: 20,
+                    right: 20,
+                    cellSize: ['auto', 26],
                     range: [startDate, endDate],
                     orient: 'horizontal',
+                    monthAlign: 'left',
+                    dayAlign: 'left',
                     itemStyle: {
                         borderWidth: 0.5,
                         borderColor: '#eee'
@@ -335,13 +337,15 @@
                     dayLabel: {
                         firstDay: 0,
                         nameMap: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
-                        fontSize: 10,
-                        color: '#666'
+                        fontSize: 11,
+                        color: '#333',
+                        position: 'start'
                     },
                     monthLabel: {
                         nameMap: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
-                        fontSize: 11,
-                        color: '#333'
+                        fontSize: 12,
+                        color: '#333',
+                        fontWeight: 'bold'
                     },
                     yearLabel: { show: false }
                 },
