@@ -22,8 +22,8 @@
         th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid #eee; }
         th:first-child, td:first-child { text-align: left; }
         th { background: #fafafa; font-weight: normal; color: #666; }
-        .stock-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-        .tab-btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
+        .stock-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+        .tab-btn { padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
         .tab-btn.active { background: #e53935; color: #fff; border-color: #e53935; }
         #klineChart { width: 100%; height: 300px; }
         .table-wrap { overflow-x: auto; }
@@ -31,6 +31,22 @@
         .page-btn { padding: 4px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
         .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .page-info { font-size: 14px; color: #666; }
+        
+        /* 手机端适配 */
+        @media (max-width: 768px) {
+            body { padding: 8px; }
+            .card { padding: 12px; margin-bottom: 8px; }
+            .title { font-size: 16px; }
+            .index-container { gap: 8px; }
+            .index-item { min-width: 120px; padding: 8px; }
+            .index-price { font-size: 18px; }
+            .index-change { font-size: 12px; }
+            .stock-tabs { gap: 4px; }
+            .tab-btn { padding: 4px 8px; font-size: 12px; }
+            table { font-size: 12px; }
+            th, td { padding: 6px 4px; }
+            #klineChart { height: 250px; }
+        }
     </style>
 </head>
 <body>
@@ -210,7 +226,31 @@
             display.className = isUp ? 'up' : 'down';
             
             const option = {
-                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross' },
+                    formatter: function(params) {
+                        const dataIndex = params[0].dataIndex;
+                        const item = data[data.length - 1 - dataIndex];
+                        const prevClose = dataIndex > 0 ? parseFloat(data[data.length - dataIndex].close) : parseFloat(item.open);
+                        const open = parseFloat(item.open);
+                        const close = parseFloat(item.close);
+                        const high = parseFloat(item.high);
+                        const low = parseFloat(item.low);
+                        const change = (close - prevClose).toFixed(2);
+                        const changePct = ((close - prevClose) / prevClose * 100).toFixed(2);
+                        const color = change >= 0 ? '#e53935' : '#2e7d32';
+                        const sign = change >= 0 ? '+' : '';
+                        return `<div style="font-size:12px;">
+                            <div style="font-weight:bold; margin-bottom:4px;">${item.day}</div>
+                            <div>开盘：${open.toFixed(2)}</div>
+                            <div>收盘：${close.toFixed(2)}</div>
+                            <div>最高：${high.toFixed(2)}</div>
+                            <div>最低：${low.toFixed(2)}</div>
+                            <div style="color:${color}; margin-top:4px;">涨跌：${sign}${change}  ${sign}${changePct}%</div>
+                        </div>`;
+                    }
+                },
                 grid: { left: '10%', right: '5%', bottom: '10%' },
                 xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10 } },
                 yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
