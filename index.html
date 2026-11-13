@@ -31,6 +31,27 @@
         .page-btn { padding: 4px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; }
         .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .page-info { font-size: 14px; color: #666; }
+
+        /* 日历热力图 */
+        .cal-legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; font-size: 12px; color: #666; }
+        .cal-legend-item { display: flex; align-items: center; gap: 5px; }
+        .cal-dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+        .cal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .cal-month { background: #fbfbfb; border: 1px solid #eee; border-radius: 8px; padding: 10px 8px 12px; }
+        .cal-month-title { text-align: center; font-size: 14px; font-weight: bold; color: #333; margin-bottom: 8px; }
+        .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin-bottom: 4px; }
+        .cal-week span { text-align: center; font-size: 11px; color: #999; }
+        .cal-body { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+        .cal-cell { height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 4px; background: #fff; border: 1px solid #f0f0f0; overflow: hidden; }
+        .cal-cell .cal-day { font-size: 13px; line-height: 1.1; }
+        .cal-cell .cal-pct { font-size: 9px; line-height: 1.2; margin-top: 1px; opacity: 0.92; white-space: nowrap; }
+        .cal-cell.cal-empty { background: transparent; border-color: transparent; }
+        .cal-cell.cal-nodata .cal-day { color: #ccc; font-size: 12px; }
+        .cal-cell.up2 { background: #c62828; border-color: #c62828; color: #fff; }
+        .cal-cell.up1 { background: #ffcdd2; border-color: #ffcdd2; color: #b71c1c; }
+        .cal-cell.down2 { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+        .cal-cell.down1 { background: #a5d6a7; border-color: #a5d6a7; color: #1b5e20; }
+        .cal-cell.flat { background: #fff; border-color: #e0e0e0; color: #333; }
         
         /* 手机端适配 */
         @media (max-width: 768px) {
@@ -46,6 +67,11 @@
             table { font-size: 12px; }
             th, td { padding: 6px 4px; }
             #klineChart { height: 250px; }
+            .cal-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+            .cal-month { padding: 8px 6px 10px; }
+            .cal-cell { height: 42px; }
+            .cal-cell .cal-day { font-size: 12px; }
+            .cal-cell .cal-pct { font-size: 8px; }
         }
     </style>
 </head>
@@ -106,8 +132,14 @@
 
     <!-- 日历热力图板块 -->
     <div class="card">
-        <div class="title">指数涨跌日历 <span style="font-size:12px; font-weight:normal; margin-left:12px; color:#666;">(红=涨幅≥0.8%  绿=跌幅≤-0.8%)</span></div>
-        <div id="calendarChart" style="width: 100%; height: 280px;"></div>
+        <div class="title">指数涨跌日历</div>
+        <div class="cal-legend">
+            <span class="cal-legend-item"><i class="cal-dot" style="background:#2e7d32;"></i>跌幅≤-0.8%</span>
+            <span class="cal-legend-item"><i class="cal-dot" style="background:#a5d6a7;"></i>小跌</span>
+            <span class="cal-legend-item"><i class="cal-dot" style="background:#ffcdd2;"></i>小涨</span>
+            <span class="cal-legend-item"><i class="cal-dot" style="background:#c62828;"></i>涨幅≥0.8%</span>
+        </div>
+        <div class="cal-grid" id="calendarWrap"></div>
     </div>
 
     <script>
@@ -172,7 +204,6 @@
         let currentStock = stockList[0];
         let currentIndex = 'sh';
         let klineChart = echarts.init(document.getElementById('klineChart'));
-        let calendarChart = echarts.init(document.getElementById('calendarChart'));
         let allData = null; // 存储从data.json读取的全部数据
         let currentStockData = null; // 当前选中股票的数据
         let currentPage = 1; // 当前页码
@@ -277,89 +308,86 @@
             renderCalendar();
         }
 
-        // 渲染日历热力图
+        // 渲染日历热力图（手机日历样式：周日到周六横向排列，两个月一行）
         function renderCalendar() {
             if (!allData || !allData.indexes) return;
             const idxCode = currentIndex === 'sh' ? 'sh000001' : 'sz399001';
             const idx = allData.indexes.find(i => i.code === idxCode);
             if (!idx) return;
-            
+
+            const wrap = document.getElementById('calendarWrap');
             const data = idx.kline;
-            const calendarData = [];
+            if (!data || !data.length) {
+                wrap.innerHTML = '<div style="color:#999;font-size:13px;">暂无数据</div>';
+                return;
+            }
+
+            // 建立 日期 -> 涨跌幅 映射
+            const pctMap = {};
             for (let i = 0; i < data.length; i++) {
                 const item = data[i];
-                const prevClose = i > 0 ? parseFloat(data[i-1].close) : parseFloat(item.open);
-                const close = parseFloat(item.close);
-                const changePct = ((close - prevClose) / prevClose * 100).toFixed(2);
-                calendarData.push([item.day, parseFloat(changePct)]);
+                let pct;
+                if (item.change_pct !== undefined && item.change_pct !== null) {
+                    pct = parseFloat(item.change_pct);
+                } else {
+                    const prevClose = i > 0 ? parseFloat(data[i - 1].close) : parseFloat(item.open);
+                    pct = (parseFloat(item.close) - prevClose) / prevClose * 100;
+                }
+                pctMap[item.day] = pct;
             }
-            
-            // 获取日期范围
-            const startDate = calendarData[0][0];
-            const endDate = calendarData[calendarData.length - 1][0];
-            
-            const option = {
-                tooltip: {
-                    formatter: function(params) {
-                        const color = params.value[1] >= 0 ? '#e53935' : '#2e7d32';
-                        const sign = params.value[1] >= 0 ? '+' : '';
-                        return `<div style="font-size:12px;">
-                            <div style="font-weight:bold;">${params.value[0]}</div>
-                            <div style="color:${color};">涨跌幅：${sign}${params.value[1]}%</div>
-                        </div>`;
+
+            // 按月份分组
+            const monthKeys = [];
+            Object.keys(pctMap).forEach(d => {
+                const ym = d.slice(0, 7);
+                if (monthKeys.indexOf(ym) === -1) monthKeys.push(ym);
+            });
+            monthKeys.sort();
+
+            const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+            let html = '';
+
+            monthKeys.forEach(ym => {
+                const parts = ym.split('-');
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10);
+                const firstDow = new Date(y, m - 1, 1).getDay();      // 0 = 周日
+                const daysInMonth = new Date(y, m, 0).getDate();
+
+                let weekHtml = '';
+                for (let w = 0; w < 7; w++) weekHtml += '<span>' + WEEK[w] + '</span>';
+
+                let bodyHtml = '';
+                // 月初前的空白格
+                for (let k = 0; k < firstDow; k++) bodyHtml += '<div class="cal-cell cal-empty"></div>';
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const key = ym + '-' + (d < 10 ? '0' + d : d);
+                    if (pctMap.hasOwnProperty(key)) {
+                        const pct = pctMap[key];
+                        let cls = 'flat';
+                        if (pct >= 0.8) cls = 'up2';
+                        else if (pct > 0) cls = 'up1';
+                        else if (pct <= -0.8) cls = 'down2';
+                        else if (pct < 0) cls = 'down1';
+                        const sign = pct > 0 ? '+' : '';
+                        bodyHtml += '<div class="cal-cell ' + cls + '" title="' + key + '  涨跌幅 ' + sign + pct.toFixed(2) + '%">'
+                            + '<span class="cal-day">' + d + '</span>'
+                            + '<span class="cal-pct">' + sign + pct.toFixed(2) + '%</span>'
+                            + '</div>';
+                    } else {
+                        bodyHtml += '<div class="cal-cell cal-nodata"><span class="cal-day">' + d + '</span></div>';
                     }
-                },
-                visualMap: {
-                    min: -3,
-                    max: 3,
-                    show: true,
-                    orient: 'horizontal',
-                    left: 'center',
-                    bottom: 0,
-                    inRange: {
-                        color: ['#00c853', '#69f0ae', '#ff5252', '#d50000']
-                    },
-                    textStyle: { fontSize: 10 }
-                },
-                calendar: {
-                    top: 50,
-                    left: 20,
-                    right: 20,
-                    cellSize: ['auto', 28],
-                    range: [startDate, endDate],
-                    orient: 'horizontal',
-                    splitLine: {
-                        lineStyle: {
-                            color: '#ccc',
-                            width: 2
-                        }
-                    },
-                    itemStyle: {
-                        borderWidth: 1,
-                        borderColor: '#fff'
-                    },
-                    dayLabel: {
-                        firstDay: 0,
-                        nameMap: ['日', '一', '二', '三', '四', '五', '六'],
-                        fontSize: 12,
-                        color: '#666',
-                        position: 'start'
-                    },
-                    monthLabel: {
-                        nameMap: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
-                        fontSize: 14,
-                        color: '#333',
-                        fontWeight: 'bold'
-                    },
-                    yearLabel: { show: false }
-                },
-                series: [{
-                    type: 'heatmap',
-                    coordinateSystem: 'calendar',
-                    data: calendarData
-                }]
-            };
-            calendarChart.setOption(option, true);
+                }
+
+                html += '<div class="cal-month">'
+                    + '<div class="cal-month-title">' + y + '年' + m + '月</div>'
+                    + '<div class="cal-week">' + weekHtml + '</div>'
+                    + '<div class="cal-body">' + bodyHtml + '</div>'
+                    + '</div>';
+            });
+
+            wrap.innerHTML = html;
         }
 
         // 加载个股日线数据（从本地data.json读取）
@@ -487,7 +515,6 @@
             };
             window.addEventListener('resize', () => {
                 klineChart.resize();
-                calendarChart.resize();
             });
         };
     </script>
